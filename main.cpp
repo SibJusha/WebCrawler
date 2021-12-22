@@ -8,26 +8,27 @@
 #include <mutex>
 #include <condition_variable>
 
-class wrong_template : std::exception {
-    std::string what_str;
-public:
-    wrong_template() : what_str("Wrong template") {}
-
-    const char* what() const noexcept override {
-        return what_str.c_str();
-    }
-};
+std::vector<std::thread> threads;
+std::recursive_mutex mutex_stack;
 
 class WebCrawler {
 
     std::string _template_;
     std::set<std::string> visited_files;
     std::stack<std::string> not_visited_files;
-    std::recursive_mutex mutex_stack;
     std::condition_variable_any empty_stack;
-    std::vector<std::thread> threads;
     int count;
     unsigned int waiting_threads;
+
+    class wrong_template : std::exception {
+        std::string what_str;
+    public:
+        wrong_template() : what_str("Wrong template") {}
+
+        const char* what() const noexcept override {
+            return what_str.c_str();
+        }
+    };
 
     std::string CopyFile (const std::string& from_directory) {
         std::ifstream source(from_directory);
@@ -114,19 +115,18 @@ public:
         return 1;
     }
 
-    void LoopedAnalysis (const std::string& start_file, bool first) {
-        int n = 1;
-        n = Analysis(start_file, first);
-        while (n != 0) {
-            n = Analysis(start_file, false);
-        }
-    }
-
     int GetFilesCount() const {
         return count;
     }
 };
 
+void LoopedAnalysis (WebCrawler& webc, const std::string& start_file, bool first) {
+    int n = 1;
+    n = webc.Analysis(start_file, first);
+    while (n != 0) {
+        n = webc.Analysis(start_file, false);
+    }
+}
 
 int main() {
     int threads_count;
@@ -134,13 +134,12 @@ int main() {
     std::cin >> start_file >> threads_count;
     auto start = std::chrono::steady_clock::now();
     WebCrawler fileReader("file");
-    //fileReader.RunAnalysis(threads_count, start_file);
     fileReader.Analysis(start_file, true);
     for (int i = 0; i < threads_count; i++) {
-        std::thread thread(&WebCrawler::LoopedAnalysis, start_file, false);
+        std::thread thread(LoopedAnalysis, std::ref(fileReader), start_file, false);
         threads.push_back(thread);
     }
-    for (auto& th : threads) {
+    for (std::thread& th : threads) {
         th.join();
     }
     int files_count = fileReader.GetFilesCount();
@@ -148,7 +147,6 @@ int main() {
         std::cout << "Error";
         return 0;
     }
-    std::thread th(foo, 3);
     auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_time = end - start;
     std::cout << files_count << elapsed_time.count() << std::endl;
